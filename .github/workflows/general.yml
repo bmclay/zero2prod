@@ -7,15 +7,32 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  SQLX_VERSION: 0.9.0
+  SQLX_FEATURES: "rustls,postgres"
 
 jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    # sqlx checks our queries against a live database at compile time,
+    # and our tests write to it, so we need Postgres running
+    services:
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - name: Install sqlx-cli
+        run: cargo install sqlx-cli --version=${{ env.SQLX_VERSION }} --features ${{ env.SQLX_FEATURES }} --no-default-features --locked
+      - name: Migrate database
+        run: SKIP_DOCKER=true bash ./scripts/init_db.sh
       - name: Run tests
         run: cargo test
 
@@ -33,11 +50,25 @@ jobs:
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
+    # Compiling the sqlx query macros needs a migrated database too
+    services:
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
+      - name: Install sqlx-cli
+        run: cargo install sqlx-cli --version=${{ env.SQLX_VERSION }} --features ${{ env.SQLX_FEATURES }} --no-default-features --locked
+      - name: Migrate database
+        run: SKIP_DOCKER=true bash ./scripts/init_db.sh
       - name: Linting
         run: cargo clippy -- -D warnings
